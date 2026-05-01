@@ -75,10 +75,10 @@ def ecef_to_wgs84(ecef_vector: np.ndarray) -> tuple[float, float, float]:
         
     return lat, lon, alt
 
-def local_to_wgs84(x: float, y: float, z: float, origin_lat: float = 17.3850, origin_lon: float = 78.4867, origin_alt: float = 542.0) -> tuple[float, float, float]:
+def local_to_wgs84(x: float, y: float, z: float, origin_lat: float, origin_lon: float, origin_alt: float) -> tuple[float, float, float]:
     """
     Directly converts local cartesian [x, y, z] to WGS84.
-    Default origin: Hyderabad, India (near Surya's location).
+    Requires an explicit mission origin.
     """
     ecef = enu_to_ecef(x, y, z, origin_lat, origin_lon, origin_alt)
     return ecef_to_wgs84(ecef)

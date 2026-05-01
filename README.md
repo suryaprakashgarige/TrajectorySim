@@ -1,6 +1,7 @@
-# Trajecto3D Pro - Cloud Native Trajectory Platform
+# Pre-Launch Missile Simulation Platform
 
 A high-fidelity, physics-based 3D trajectory simulation system built with FastAPI, Redis/RQ, MongoDB, and Cesium.
+This project simulates gravity-compensation and controlled 3D trajectories for research and engineering analysis.
 
 ## Quick Start (Docker)
 

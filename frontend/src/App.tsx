@@ -113,9 +113,7 @@ function App() {
             <Rocket className="text-white w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-black tracking-tighter uppercase italic">
-              Trajecto<span className="text-blue-500">3D</span> Cloud
-            </h1>
+              Missile<span className="text-blue-500">Sim</span> 3D
           </div>
         </div>
         

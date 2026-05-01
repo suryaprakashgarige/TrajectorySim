@@ -30,9 +30,9 @@ class NumericalIntegrator:
         
         # 3. Aerodynamic Drag force
         v_mag = np.linalg.norm(v)
-        if v_mag > 0 and self.drag_coeff > 0:
-            drag_mag = 0.5 * self.air_density * self.drag_coeff * self.reference_area * v_mag
-            F_drag = -drag_mag * v
+        if v_mag > 1e-6 and self.drag_coeff > 0:
+            # Speed-safe numerically stable drag
+            F_drag = -0.5 * self.air_density * self.drag_coeff * self.reference_area * v_mag**2 * (v / v_mag)
         else:
             F_drag = np.zeros(3)
             

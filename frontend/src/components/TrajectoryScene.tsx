@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo } from 'react';
-import { Viewer, Entity, PolylineGraphics, ModelGraphics, Scene, Globe, PointGraphics } from 'resium';
+import { Viewer, Entity, PolylineGraphics, Scene, Globe, PointGraphics } from 'resium';
 import { 
   Cartesian3, 
   Color, 
@@ -11,9 +11,6 @@ import {
   createOsmBuildingsAsync
 } from 'cesium';
 import "cesium/Build/Cesium/Widgets/widgets.css";
-
-// Note: In a real production app, the user would provide their own Ion token.
-// Using a placeholder or default if available.
 
 interface TrajectoryPoint {
   time: number;
@@ -32,7 +29,19 @@ interface Props {
 export function TrajectoryScene({ data }: Props) {
   const viewerRef = useRef<any>(null);
 
-  // 1. Create SampledPositionProperty for animation
+  // 1. Initialize environment only once on mount
+  useEffect(() => {
+    if (viewerRef.current && viewerRef.current.cesiumElement) {
+      const viewer = viewerRef.current.cesiumElement;
+      
+      // Add OSM Buildings once
+      createOsmBuildingsAsync().then((buildings) => {
+        viewer.scene.primitives.add(buildings);
+      });
+    }
+  }, []);
+
+  // 2. Create SampledPositionProperty for animation
   const { positionProperty, orientationProperty, startTime, stopTime, polylinePositions } = useMemo(() => {
     if (!data || data.length === 0) {
       return { 
@@ -44,6 +53,7 @@ export function TrajectoryScene({ data }: Props) {
       };
     }
 
+    // Use a stable start time for the mission
     const start = JulianDate.now();
     const property = new SampledPositionProperty();
     const positions: Cartesian3[] = [];
@@ -57,7 +67,7 @@ export function TrajectoryScene({ data }: Props) {
 
     const stop = JulianDate.addSeconds(start, data[data.length - 1].time, new JulianDate());
     
-    // Orientation based on velocity
+    // Orientation based on velocity vector
     const orientation = new VelocityOrientationProperty(property);
 
     return { 
@@ -69,36 +79,29 @@ export function TrajectoryScene({ data }: Props) {
     };
   }, [data]);
 
-  // 2. Adjust view and environment when data changes
+  // 3. Adjust view and clock when simulation data is loaded
   useEffect(() => {
-    if (viewerRef.current && viewerRef.current.cesiumElement) {
+    if (viewerRef.current && viewerRef.current.cesiumElement && data.length > 0) {
       const viewer = viewerRef.current.cesiumElement;
       
-      // Add OSM Buildings
-      createOsmBuildingsAsync().then((buildings) => {
-        viewer.scene.primitives.add(buildings);
+      // Zoom to the start point
+      const firstPoint = data[0];
+      viewer.camera.flyTo({
+        destination: Cartesian3.fromDegrees(firstPoint.lon, firstPoint.lat, firstPoint.alt + 1500),
+        orientation: {
+          pitch: -0.5,
+          heading: 0
+        },
+        duration: 2
       });
-
-      if (data.length > 0) {
-        // Zoom to the start point
-        const firstPoint = data[0];
-        viewer.camera.flyTo({
-          destination: Cartesian3.fromDegrees(firstPoint.lon, firstPoint.lat, firstPoint.alt + 1500),
-          orientation: {
-            pitch: -0.5,
-            heading: 0
-          },
-          duration: 2
-        });
-        
-        // Set clock range
-        if (startTime && stopTime) {
-          viewer.clock.startTime = startTime.clone();
-          viewer.clock.stopTime = stopTime.clone();
-          viewer.clock.currentTime = startTime.clone();
-          viewer.clock.clockRange = 1; // LOOP_STOP
-          viewer.clock.multiplier = 1;
-        }
+      
+      // Sync clock with the simulation time axis
+      if (startTime && stopTime) {
+        viewer.clock.startTime = startTime.clone();
+        viewer.clock.stopTime = stopTime.clone();
+        viewer.clock.currentTime = startTime.clone();
+        viewer.clock.clockRange = 1; // LOOP_STOP
+        viewer.clock.multiplier = 1;
       }
     }
   }, [data, startTime, stopTime]);
@@ -115,14 +118,14 @@ export function TrajectoryScene({ data }: Props) {
         navigationHelpButton={false}
         homeButton={false}
         sceneModePicker={false}
-        terrainProvider={undefined} // Will be set via createWorldTerrainAsync if needed, but for now we skip to pass build
+        terrainProvider={undefined}
       >
         <Scene backgroundColor={Color.BLACK} />
         <Globe enableLighting={true} />
         
         {data.length > 0 && positionProperty && (
           <>
-            {/* The Missile/Drone Entity */}
+            {/* The Missile Entity (Represented by a point marker) */}
             <Entity
               position={positionProperty}
               orientation={orientationProperty}
@@ -131,14 +134,8 @@ export function TrajectoryScene({ data }: Props) {
               ])}
               tracked
             >
-              {/* Drone 3D Model */}
-              <ModelGraphics
-                uri="https://assets.cesium.com/0/0/0/0/model.glb" // Placeholder URL, Cesium Ion assets are better
-                minimumPixelSize={64}
-                maximumScale={20000}
-                runAnimations={true}
-              />
-              <PointGraphics pixelSize={8} color={Color.YELLOW} />
+              {/* Point marker as a fallback for the 3D model */}
+              <PointGraphics pixelSize={10} color={Color.YELLOW} outlineColor={Color.BLACK} outlineWidth={2} />
             </Entity>
 
             {/* The Trajectory Path */}

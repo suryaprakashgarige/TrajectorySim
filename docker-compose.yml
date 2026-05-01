@@ -1,9 +1,13 @@
-
 services:
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - trajectory-net
 
@@ -13,6 +17,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     networks:
       - trajectory-net
 
@@ -24,8 +33,15 @@ services:
       - REDIS_URL=redis://redis:6379
       - MONGO_URL=mongodb://mongodb:27017
     depends_on:
-      - redis
-      - mongodb
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     networks:
       - trajectory-net
 
@@ -36,8 +52,10 @@ services:
       - REDIS_URL=redis://redis:6379
       - MONGO_URL=mongodb://mongodb:27017
     depends_on:
-      - redis
-      - mongodb
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
     networks:
       - trajectory-net
 
@@ -46,7 +64,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     networks:
       - trajectory-net
 

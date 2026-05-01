@@ -12,7 +12,7 @@ import asyncio
 from db import replays, missions
 from worker import simulate_task
 
-app = FastAPI(title="Trajecto3D Pro - Cloud Native Simulation API")
+app = FastAPI(title="Pre-Launch Missile Simulation API")
 
 # Redis configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -41,12 +41,17 @@ class SimulationParams(BaseModel):
     drag_coeff: float = 0.47
     reference_area: float = 0.01
     integration_method: str = "rk4"
+    origin_lat: float = 17.3850
+    origin_lon: float = 78.4867
+    origin_alt: float = 542.0
+    target_tolerance: float = 1.0
+    velocity_tolerance: float = 0.5
 
 @app.post("/simulate")
 async def enqueue_simulation(params: SimulationParams):
     """Enqueues a simulation task and returns a job ID."""
-    # Create a job first to get ID
-    job = q.enqueue(simulate_task, params.dict(), job_id=None) # job_id is auto-generated
+    # Enqueue task without job_id (worker will retrieve it via get_current_job)
+    job = q.enqueue(simulate_task, params.model_dump())
     return {"job_id": job.get_id()}
 
 @app.get("/result/{job_id}")
