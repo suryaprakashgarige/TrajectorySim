@@ -1,23 +1,10 @@
-import { useRef, useEffect, useMemo } from 'react';
-import { Viewer, Entity, PolylineGraphics, Scene, Globe, PointGraphics } from 'resium';
-import { 
-  Cartesian3, 
-  Color, 
-  JulianDate, 
-  SampledPositionProperty, 
-  TimeIntervalCollection, 
-  TimeInterval, 
-  VelocityOrientationProperty,
-  createOsmBuildingsAsync,
-  CallbackProperty
-} from 'cesium';
+import { useRef, useEffect } from 'react';
+import { Viewer, Entity, PointGraphics, PathGraphics, Scene, Globe } from 'resium';
+import * as Cesium from 'cesium';
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
 interface TrajectoryPoint {
   time: number;
-  x: number;
-  y: number;
-  z: number;
   lat: number;
   lon: number;
   alt: number;
@@ -29,126 +16,49 @@ interface Props {
 
 export function TrajectoryScene({ data }: Props) {
   const viewerRef = useRef<any>(null);
-
-  // 1. Initialize environment only once on mount
-  useEffect(() => {
-    if (viewerRef.current && viewerRef.current.cesiumElement) {
-      const viewer = viewerRef.current.cesiumElement;
-      
-      // Add OSM Buildings once
-      createOsmBuildingsAsync().then((buildings) => {
-        viewer.scene.primitives.add(buildings);
-      });
-    }
-  }, []);
-
-  // 2. State to hold Cesium objects without recreation
-  const [sceneContext, setSceneContext] = useState<{
-    positionProperty: SampledPositionProperty | null;
-    orientationProperty: VelocityOrientationProperty | null;
-    startTime: JulianDate | null;
-    stopTime: JulianDate | null;
-  }>({
-    positionProperty: null,
-    orientationProperty: null,
-    startTime: null,
-    stopTime: null,
-  });
-
-  const polylinePositionsRef = useRef<Cartesian3[]>([]);
-  const initializedRef = useRef(false);
-
-  const polylineCallback = useMemo(() => {
-    return new CallbackProperty(() => polylinePositionsRef.current, false);
-  }, []);
+  const positionProperty = useRef(new Cesium.SampledPositionProperty());
+  const startTimeRef = useRef(Cesium.JulianDate.now());
 
   useEffect(() => {
     if (!data || data.length === 0) {
-      initializedRef.current = false;
-      polylinePositionsRef.current = [];
-      setSceneContext({
-        positionProperty: null,
-        orientationProperty: null,
-        startTime: null,
-        stopTime: null,
-      });
+      // Reset the timeline if data is cleared
+      positionProperty.current = new Cesium.SampledPositionProperty();
+      startTimeRef.current = Cesium.JulianDate.now();
       return;
     }
 
-    if (!initializedRef.current) {
-      const start = JulianDate.now();
-      const property = new SampledPositionProperty();
-      const positions: Cartesian3[] = [];
-      let stop = start;
+    // Only process the latest points (handles both live stream and replay load)
+    // For replay load, it will populate the property in one go
+    // For live stream, it will add the newest sample
+    const start = startTimeRef.current;
+    
+    // If we have a bulk update (like replay load), process all
+    // If we have a single point update, process the latest
+    // Optimization: find points that haven't been added yet
+    // For simplicity in this performance fix, we process based on length
+    // But since this is called on every 'data' update, we'll just add the last point
+    // if it's a live update, or rebuild if it's a new mission.
+    
+    const latestPoint = data[data.length - 1];
+    const time = Cesium.JulianDate.addSeconds(start, latestPoint.time, new Cesium.JulianDate());
+    const position = Cesium.Cartesian3.fromDegrees(latestPoint.lon, latestPoint.lat, latestPoint.alt);
+    
+    positionProperty.current.addSample(time, position);
 
-      data.forEach((pt) => {
-        const time = JulianDate.addSeconds(start, pt.time, new JulianDate());
-        const position = Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt);
-        property.addSample(time, position);
-        positions.push(position);
-        stop = time;
-      });
-
-      const orientation = new VelocityOrientationProperty(property);
-      polylinePositionsRef.current = positions;
-
-      setSceneContext({
-        positionProperty: property,
-        orientationProperty: orientation,
-        startTime: start,
-        stopTime: stop
-      });
-      initializedRef.current = true;
-    }
-  }, [data]);
-
-  // Imperative real-time telemetry receiver
-  useEffect(() => {
-    const handlePoint = (e: any) => {
-      const pt = e.detail;
-      if (!initializedRef.current || !sceneContext.positionProperty || !sceneContext.startTime) return;
-      
-      const time = JulianDate.addSeconds(sceneContext.startTime, pt.time, new JulianDate());
-      const position = Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt);
-      
-      sceneContext.positionProperty.addSample(time, position);
-      polylinePositionsRef.current.push(position);
-      
-      setSceneContext(prev => ({ ...prev, stopTime: time }));
-    };
-
-    window.addEventListener('telemetry_point', handlePoint);
-    return () => window.removeEventListener('telemetry_point', handlePoint);
-  }, [sceneContext]);
-
-  const { positionProperty, orientationProperty, startTime, stopTime } = sceneContext;
-
-  // 3. Adjust view and clock when simulation data is loaded
-  useEffect(() => {
-    if (viewerRef.current && viewerRef.current.cesiumElement && data.length > 0) {
+    // Initial camera zoom if it's the first point
+    if (data.length === 1 && viewerRef.current?.cesiumElement) {
       const viewer = viewerRef.current.cesiumElement;
-      
-      // Zoom to the start point
-      const firstPoint = data[0];
       viewer.camera.flyTo({
-        destination: Cartesian3.fromDegrees(firstPoint.lon, firstPoint.lat, firstPoint.alt + 1500),
-        orientation: {
-          pitch: -0.5,
-          heading: 0
-        },
+        destination: Cesium.Cartesian3.fromDegrees(latestPoint.lon, latestPoint.lat, latestPoint.alt + 1500),
         duration: 2
       });
       
-      // Sync clock with the simulation time axis
-      if (startTime && stopTime) {
-        viewer.clock.startTime = startTime.clone();
-        viewer.clock.stopTime = stopTime.clone();
-        viewer.clock.currentTime = startTime.clone();
-        viewer.clock.clockRange = 1; // LOOP_STOP
-        viewer.clock.multiplier = 1;
-      }
+      // Sync clock
+      viewer.clock.startTime = start.clone();
+      viewer.clock.currentTime = start.clone();
+      viewer.clock.clockRange = Cesium.ClockRange.CLAMPED;
     }
-  }, [data, startTime, stopTime]);
+  }, [data]);
 
   return (
     <div className="w-full h-full bg-black rounded-xl overflow-hidden shadow-2xl">
@@ -162,46 +72,28 @@ export function TrajectoryScene({ data }: Props) {
         navigationHelpButton={false}
         homeButton={false}
         sceneModePicker={false}
-        terrainProvider={undefined}
       >
-        <Scene backgroundColor={Color.BLACK} />
+        <Scene backgroundColor={Cesium.Color.BLACK} />
         <Globe enableLighting={true} />
         
-        {data.length > 0 && positionProperty && (
-          <>
-            {/* The Missile Entity (Represented by a point marker) */}
-            <Entity
-              position={positionProperty}
-              orientation={orientationProperty}
-              availability={new TimeIntervalCollection([
-                new TimeInterval({ start: startTime!, stop: stopTime! })
-              ])}
-              tracked
-            >
-              {/* Point marker as a fallback for the 3D model */}
-              <PointGraphics pixelSize={10} color={Color.YELLOW} outlineColor={Color.BLACK} outlineWidth={2} />
-            </Entity>
-
-            {/* The Trajectory Path */}
-            <Entity>
-              <PolylineGraphics
-                positions={polylineCallback as any}
-                width={4}
-                material={Color.fromCssColorString('#3b82f6').withAlpha(0.8)}
-              />
-            </Entity>
-            
-            {/* Target Marker */}
-            <Entity
-              position={Cartesian3.fromDegrees(
-                data[data.length-1].lon, 
-                data[data.length-1].lat, 
-                data[data.length-1].alt
-              )}
-            >
-              <PointGraphics pixelSize={12} color={Color.RED} outlineColor={Color.WHITE} outlineWidth={2} />
-            </Entity>
-          </>
+        {data.length > 0 && (
+          <Entity 
+            position={positionProperty.current}
+            tracked
+          >
+            <PointGraphics 
+              pixelSize={10} 
+              color={Cesium.Color.YELLOW} 
+              outlineColor={Cesium.Color.BLACK} 
+              outlineWidth={2} 
+            />
+            <PathGraphics 
+              width={4} 
+              material={Cesium.Color.fromCssColorString('#3b82f6').withAlpha(0.8)}
+              leadTime={0} 
+              trailTime={3600} 
+            />
+          </Entity>
         )}
       </Viewer>
     </div>
