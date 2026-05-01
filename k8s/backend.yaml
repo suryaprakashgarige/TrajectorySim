@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trajectory-backend
+  labels:
+    app: trajectory-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trajectory-backend
+  template:
+    metadata:
+      labels:
+        app: trajectory-backend
+    spec:
+      containers:
+      - name: backend
+        image: trajectory-backend:latest
+        imagePullPolicy: Never # Assuming local build for testing
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trajectory-backend-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: trajectory-backend
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

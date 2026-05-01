@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trajectory-frontend
+  labels:
+    app: trajectory-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trajectory-frontend
+  template:
+    metadata:
+      labels:
+        app: trajectory-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: trajectory-frontend:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trajectory-frontend-svc
+spec:
+  type: LoadBalancer
+  selector:
+    app: trajectory-frontend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
