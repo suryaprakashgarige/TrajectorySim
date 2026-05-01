@@ -19,15 +19,23 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_conn = redis.from_url(REDIS_URL)
 q = Queue(connection=redis_conn)
 
-origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+# Dynamic CORS from K8s Environment Variables
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173")
+allowed_origins = allowed_origins_env.split(",")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup_event():
+    # Verify Redis is reachable
+    redis_conn.ping()
+    print("Startup: Redis connection verified.")
 
 class SimulationParams(BaseModel):
     mass: float = 1.0
