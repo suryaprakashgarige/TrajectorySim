@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { SimulationControls, SimParams } from './components/SimulationControls'
+import { SimulationControls } from './components/SimulationControls'
+import type { SimParams } from './components/SimulationControls'
 import { TrajectoryScene } from './components/TrajectoryScene'
 import { TelemetryDashboard } from './components/TelemetryDashboard'
 

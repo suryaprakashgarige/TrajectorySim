@@ -1,5 +1,5 @@
 import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Grid, Line, Sphere, Trail } from '@react-three/drei';
+import { OrbitControls, Grid, Line, Sphere } from '@react-three/drei';
 import { useRef, useMemo, useEffect, useState } from 'react';
 import * as THREE from 'three';
 
