@@ -4,7 +4,7 @@ import type { SimParams } from './components/SimulationControls'
 import { TrajectoryScene } from './components/TrajectoryScene'
 import { TelemetryDashboard } from './components/TelemetryDashboard'
 import { MissionProfiles } from './components/MissionProfiles'
-import { Rocket, Activity, Globe, Info, Loader2, History, Play } from 'lucide-react'
+import { Rocket, Loader2, History, Play } from 'lucide-react'
 
 function App() {
   const [params, setParams] = useState<SimParams>({
@@ -22,8 +22,6 @@ function App() {
   const [data, setData] = useState<any[]>([])
   const [metrics, setMetrics] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [jobId, setJobId] = useState<string | null>(null)
   const [replays, setReplays] = useState<any[]>([])
   const [view, setView] = useState<'live' | 'replay'>('live')
 
@@ -41,7 +39,6 @@ function App() {
 
   const loadReplay = async (id: string) => {
     setIsLoading(true)
-    setError(null)
     setView('replay')
     try {
       const response = await fetch(`http://localhost:8000/replays/${id}`)
@@ -49,7 +46,7 @@ function App() {
       setData(result.trajectory)
       setMetrics(result.metrics)
     } catch (err: any) {
-      setError('Failed to load replay')
+      console.error('Failed to load replay')
     } finally {
       setIsLoading(false)
     }
@@ -57,7 +54,6 @@ function App() {
 
   const runSimulation = async () => {
     setIsLoading(true)
-    setError(null)
     setData([])
     setMetrics(null)
     setView('live')
@@ -70,7 +66,6 @@ function App() {
       })
       
       const { job_id } = await response.json()
-      setJobId(job_id)
       
       // Connect to WebSocket for real-time telemetry
       if (ws.current) ws.current.close()
@@ -95,7 +90,7 @@ function App() {
       }
 
     } catch (err: any) {
-      setError(err.message)
+      console.error(err.message)
       setIsLoading(false)
     }
   }

@@ -8,9 +8,7 @@ import {
   TimeIntervalCollection, 
   TimeInterval, 
   VelocityOrientationProperty,
-  createWorldTerrain,
-  Ion,
-  createOsmBuildings
+  createOsmBuildingsAsync
 } from 'cesium';
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
@@ -77,7 +75,9 @@ export function TrajectoryScene({ data }: Props) {
       const viewer = viewerRef.current.cesiumElement;
       
       // Add OSM Buildings
-      viewer.scene.primitives.add(createOsmBuildings());
+      createOsmBuildingsAsync().then((buildings) => {
+        viewer.scene.primitives.add(buildings);
+      });
 
       if (data.length > 0) {
         // Zoom to the start point
@@ -115,7 +115,7 @@ export function TrajectoryScene({ data }: Props) {
         navigationHelpButton={false}
         homeButton={false}
         sceneModePicker={false}
-        terrainProvider={createWorldTerrain()}
+        terrainProvider={undefined} // Will be set via createWorldTerrainAsync if needed, but for now we skip to pass build
       >
         <Scene backgroundColor={Color.BLACK} />
         <Globe enableLighting={true} />

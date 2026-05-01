@@ -1,4 +1,4 @@
-// backend/db.py
+# backend/db.py
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 

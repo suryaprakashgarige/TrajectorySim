@@ -1,9 +1,9 @@
-// backend/worker.py
+# backend/worker.py
 import os
 import redis
 import json
 import numpy as np
-from rq import Worker, Queue, Connection
+from rq import Worker, Queue
 from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 from physics.integrator import NumericalIntegrator, G_ACCEL
@@ -130,6 +130,5 @@ def simulate_task(params_dict: dict, job_id: str):
     return result
 
 if __name__ == '__main__':
-    with Connection(redis_conn):
-        worker = Worker(['default'])
-        worker.work()
+    worker = Worker(['default'], connection=redis_conn)
+    worker.work()
