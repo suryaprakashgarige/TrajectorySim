@@ -1,6 +1,8 @@
+# docker-compose.yml — TrajectorySim Production Stack
 services:
+  # ── Message Broker ──
   redis:
-    image: redis:7-alpine
+    image: redis:alpine
     ports:
       - "6379:6379"
     healthcheck:
@@ -8,9 +10,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    networks:
-      - trajectory-net
 
+  # ── Database ──
   mongodb:
     image: mongo:6
     ports:
@@ -22,56 +23,41 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    networks:
-      - trajectory-net
 
+  # ── FastAPI Server ──
   api:
     build: ./backend
     ports:
       - "8000:8000"
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://redis:6379/0
       - MONGO_URL=mongodb://mongodb:27017
     depends_on:
       redis:
         condition: service_healthy
       mongodb:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      - trajectory-net
 
+  # ── Background Worker ──
   worker:
     build: ./backend
     command: ["python", "worker.py"]
     environment:
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://redis:6379/0
       - MONGO_URL=mongodb://mongodb:27017
     depends_on:
       redis:
         condition: service_healthy
       mongodb:
         condition: service_healthy
-    networks:
-      - trajectory-net
 
+  # ── React Frontend (Nginx) ──
   frontend:
     build: ./frontend
     ports:
-      - "80:80"
+      - "5173:80"
     depends_on:
-      api:
-        condition: service_healthy
-    networks:
-      - trajectory-net
-
-networks:
-  trajectory-net:
-    driver: bridge
+      - api
 
 volumes:
   mongo-data:

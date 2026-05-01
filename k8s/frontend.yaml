@@ -1,18 +1,28 @@
+# k8s/frontend.yaml — Frontend Deployment + Service + ConfigMap
+
+# ═══════════════════════════════════════════════════════
+# ConfigMap: Runtime environment injection for React SPA
+# ═══════════════════════════════════════════════════════
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: frontend-config
 data:
   config.js: |
-    // This allows React to know where the API is inside K8s
     window.ENV = {
-      API_URL: "http://api.trajectorysim.local"
+      API_URL: "http://backend-api-service:8000"
     };
+
 ---
+# ═══════════════════════════════════════════════════════
+# Deployment: Nginx serving the React build
+# ═══════════════════════════════════════════════════════
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
+  labels:
+    app: frontend
 spec:
   replicas: 1
   selector:
@@ -24,27 +34,38 @@ spec:
         app: frontend
     spec:
       containers:
-      - name: frontend
-        image: trajectorysim-frontend:latest
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 80
-        volumeMounts:
-        - name: config-volume
-          mountPath: /usr/share/nginx/html/config.js
-          subPath: config.js
+        - name: frontend
+          image: trajectorysim-frontend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: config-volume
+              mountPath: /usr/share/nginx/html/config.js
+              subPath: config.js
+          resources:
+            requests:
+              memory: "128Mi"
+            limits:
+              memory: "256Mi"
       volumes:
-      - name: config-volume
-        configMap:
-          name: frontend-config
+        - name: config-volume
+          configMap:
+            name: frontend-config
+
 ---
+# ═══════════════════════════════════════════════════════
+# Service: LoadBalancer exposing the frontend externally
+# ═══════════════════════════════════════════════════════
 apiVersion: v1
 kind: Service
 metadata:
   name: frontend-service
 spec:
+  type: LoadBalancer
   selector:
     app: frontend
   ports:
-  - port: 80
-    targetPort: 80
+    - protocol: TCP
+      port: 80
+      targetPort: 80
