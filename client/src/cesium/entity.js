@@ -15,18 +15,17 @@ export function createTrajectoryEntity(viewer, samples, startTimeStr) {
     path: {
       resolution: 1,
       material: new Cesium.PolylineGlowMaterialProperty({
-        glowPower: 0.1,
-        color: Cesium.Color.RED
+        glowPower: 0.3,
+        taperPower: 0.5,
+        color: Cesium.Color.CYAN
       }),
-      width: 5,
+      width: 6,
       leadTime: 0,
       trailTime: 10000 // Keep trail visible
     },
-    point: {
-      pixelSize: 10,
-      color: Cesium.Color.YELLOW,
-      outlineColor: Cesium.Color.BLACK,
-      outlineWidth: 2
+    model: {
+      uri: "./assets/Cesium_Air.glb",
+      minimumPixelSize: 64
     }
   });
 

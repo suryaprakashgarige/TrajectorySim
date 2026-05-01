@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>3D Trajectory Simulation</title>
-  <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
-  <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <script>window.CESIUM_BASE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/cesium/1.114.0/';</script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cesium/1.114.0/Cesium.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/cesium/1.114.0/Widgets/widgets.css" rel="stylesheet">
   <style>
     body, html {
       margin: 0;
@@ -54,22 +55,71 @@
     button:hover {
       background: #0056b3;
     }
+    #hud-panel {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(10, 20, 30, 0.85);
+      border: 1px solid #00ffcc;
+      color: #00ffcc;
+      padding: 15px 20px;
+      border-radius: 8px;
+      font-family: 'Courier New', Courier, monospace;
+      z-index: 10;
+      display: none;
+      box-shadow: 0 0 10px rgba(0, 255, 204, 0.2);
+    }
+    #hud-panel h3 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      text-transform: uppercase;
+      font-size: 16px;
+      border-bottom: 1px solid #00ffcc;
+      padding-bottom: 5px;
+    }
+    .hud-item {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+      font-size: 14px;
+      min-width: 200px;
+    }
+    .hud-item span:first-child {
+      color: #aaa;
+    }
+    .hud-item span:last-child {
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
   <div id="ui-panel">
     <h3>Trajectory Config</h3>
     <div class="input-group">
-      <strong>Start (Chennai)</strong><br>
-      <label>Lat:</label> <input type="number" id="startLat" value="13.0827" step="any"><br>
-      <label>Lon:</label> <input type="number" id="startLon" value="80.2707" step="any">
+      <p id="start-status">1. Click on globe for Start (Green)</p>
+      <p id="target-status">2. Click on globe for Target (Red)</p>
     </div>
-    <div class="input-group">
-      <strong>Target (Maldives)</strong><br>
-      <label>Lat:</label> <input type="number" id="targetLat" value="3.2028" step="any"><br>
-      <label>Lon:</label> <input type="number" id="targetLon" value="73.2207" step="any">
+    <button id="simulateBtn" style="background: #e63946;">Launch Missile</button>
+    <button id="resetBtn" style="background: #333; margin-top: 5px;">Reset</button>
+  </div>
+  <div id="hud-panel">
+    <h3>Live Telemetry</h3>
+    <div class="hud-item">
+      <span>Altitude:</span>
+      <span id="hud-alt">0.00 km</span>
     </div>
-    <button id="simulateBtn">Simulate</button>
+    <div class="hud-item">
+      <span>Speed:</span>
+      <span id="hud-speed">0.00 Mach</span>
+    </div>
+    <div class="hud-item">
+      <span>Distance:</span>
+      <span id="hud-dist">0.00 km</span>
+    </div>
+    <div class="hud-item">
+      <span>Time:</span>
+      <span id="hud-time">0.0 s</span>
+    </div>
   </div>
   <div id="cesiumContainer"></div>
   <script type="module" src="./src/app.js"></script>

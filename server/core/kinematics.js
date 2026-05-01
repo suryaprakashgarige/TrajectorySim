@@ -1,5 +1,5 @@
 const g = 9.81;
-const MAX_ALTITUDE = 100000; // meters
+const MAX_ALTITUDE = 150000; // meters
 
 function computeTotalTime(distance, velocity) {
   return distance / velocity;
