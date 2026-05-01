@@ -29,7 +29,8 @@ function App() {
 
   const fetchReplays = async () => {
     try {
-      const response = await fetch('http://localhost:8000/replays')
+      const apiUrl = (window as any).ENV?.API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/replays`)
       const result = await response.json()
       setReplays(result)
     } catch (err) {
@@ -41,7 +42,8 @@ function App() {
     setIsLoading(true)
     setView('replay')
     try {
-      const response = await fetch(`http://localhost:8000/replays/${id}`)
+      const apiUrl = (window as any).ENV?.API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/replays/${id}`)
       const result = await response.json()
       setData(result.trajectory)
       setMetrics(result.metrics)
@@ -59,7 +61,8 @@ function App() {
     setView('live')
     
     try {
-      const response = await fetch('http://localhost:8000/simulate', {
+      const apiUrl = (window as any).ENV?.API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/simulate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...params }),
@@ -70,20 +73,32 @@ function App() {
       // Connect to WebSocket for real-time telemetry
       if (ws.current) ws.current.close()
       
-      ws.current = new WebSocket(`ws://localhost:8000/ws/${job_id}`)
+      const wsUrl = apiUrl.replace('http', 'ws');
+      ws.current = new WebSocket(`${wsUrl}/ws/${job_id}`)
+      
+      let pointCount = 0;
       
       ws.current.onmessage = (event) => {
         const point = JSON.parse(event.data)
-        setData(prev => [...prev, point])
+        
+        // Dispatch directly to 3D scene without React re-render
+        window.dispatchEvent(new CustomEvent('telemetry_point', { detail: point }));
+        
+        // Throttle React state updates to ~10Hz (every 5th point if running at 50Hz)
+        pointCount++;
+        if (pointCount % 5 === 0) {
+          setData(prev => [...prev, point])
+        }
       }
       
       ws.current.onclose = async () => {
         // Fetch final metrics and full trajectory once finished
-        const resResponse = await fetch(`http://localhost:8000/result/${job_id}`)
+        const resResponse = await fetch(`${apiUrl}/result/${job_id}`)
         const result = await resResponse.json()
         if (result.metrics) {
           setMetrics(result.metrics)
           setData(result.trajectory)
+          window.dispatchEvent(new CustomEvent('telemetry_complete', { detail: result.trajectory }));
         }
         setIsLoading(false)
         fetchReplays()

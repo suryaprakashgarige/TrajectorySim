@@ -19,9 +19,11 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_conn = redis.from_url(REDIS_URL)
 q = Queue(connection=redis_conn)
 
+origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

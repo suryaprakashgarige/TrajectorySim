@@ -8,7 +8,8 @@ import {
   TimeIntervalCollection, 
   TimeInterval, 
   VelocityOrientationProperty,
-  createOsmBuildingsAsync
+  createOsmBuildingsAsync,
+  CallbackProperty
 } from 'cesium';
 import "cesium/Build/Cesium/Widgets/widgets.css";
 
@@ -41,43 +42,86 @@ export function TrajectoryScene({ data }: Props) {
     }
   }, []);
 
-  // 2. Create SampledPositionProperty for animation
-  const { positionProperty, orientationProperty, startTime, stopTime, polylinePositions } = useMemo(() => {
+  // 2. State to hold Cesium objects without recreation
+  const [sceneContext, setSceneContext] = useState<{
+    positionProperty: SampledPositionProperty | null;
+    orientationProperty: VelocityOrientationProperty | null;
+    startTime: JulianDate | null;
+    stopTime: JulianDate | null;
+  }>({
+    positionProperty: null,
+    orientationProperty: null,
+    startTime: null,
+    stopTime: null,
+  });
+
+  const polylinePositionsRef = useRef<Cartesian3[]>([]);
+  const initializedRef = useRef(false);
+
+  const polylineCallback = useMemo(() => {
+    return new CallbackProperty(() => polylinePositionsRef.current, false);
+  }, []);
+
+  useEffect(() => {
     if (!data || data.length === 0) {
-      return { 
-        positionProperty: null, 
-        orientationProperty: null, 
-        startTime: null, 
+      initializedRef.current = false;
+      polylinePositionsRef.current = [];
+      setSceneContext({
+        positionProperty: null,
+        orientationProperty: null,
+        startTime: null,
         stopTime: null,
-        polylinePositions: []
-      };
+      });
+      return;
     }
 
-    // Use a stable start time for the mission
-    const start = JulianDate.now();
-    const property = new SampledPositionProperty();
-    const positions: Cartesian3[] = [];
+    if (!initializedRef.current) {
+      const start = JulianDate.now();
+      const property = new SampledPositionProperty();
+      const positions: Cartesian3[] = [];
+      let stop = start;
 
-    data.forEach((pt) => {
-      const time = JulianDate.addSeconds(start, pt.time, new JulianDate());
-      const position = Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt);
-      property.addSample(time, position);
-      positions.push(position);
-    });
+      data.forEach((pt) => {
+        const time = JulianDate.addSeconds(start, pt.time, new JulianDate());
+        const position = Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt);
+        property.addSample(time, position);
+        positions.push(position);
+        stop = time;
+      });
 
-    const stop = JulianDate.addSeconds(start, data[data.length - 1].time, new JulianDate());
-    
-    // Orientation based on velocity vector
-    const orientation = new VelocityOrientationProperty(property);
+      const orientation = new VelocityOrientationProperty(property);
+      polylinePositionsRef.current = positions;
 
-    return { 
-      positionProperty: property, 
-      orientationProperty: orientation,
-      startTime: start, 
-      stopTime: stop,
-      polylinePositions: positions
-    };
+      setSceneContext({
+        positionProperty: property,
+        orientationProperty: orientation,
+        startTime: start,
+        stopTime: stop
+      });
+      initializedRef.current = true;
+    }
   }, [data]);
+
+  // Imperative real-time telemetry receiver
+  useEffect(() => {
+    const handlePoint = (e: any) => {
+      const pt = e.detail;
+      if (!initializedRef.current || !sceneContext.positionProperty || !sceneContext.startTime) return;
+      
+      const time = JulianDate.addSeconds(sceneContext.startTime, pt.time, new JulianDate());
+      const position = Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt);
+      
+      sceneContext.positionProperty.addSample(time, position);
+      polylinePositionsRef.current.push(position);
+      
+      setSceneContext(prev => ({ ...prev, stopTime: time }));
+    };
+
+    window.addEventListener('telemetry_point', handlePoint);
+    return () => window.removeEventListener('telemetry_point', handlePoint);
+  }, [sceneContext]);
+
+  const { positionProperty, orientationProperty, startTime, stopTime } = sceneContext;
 
   // 3. Adjust view and clock when simulation data is loaded
   useEffect(() => {
@@ -141,7 +185,7 @@ export function TrajectoryScene({ data }: Props) {
             {/* The Trajectory Path */}
             <Entity>
               <PolylineGraphics
-                positions={polylinePositions}
+                positions={polylineCallback as any}
                 width={4}
                 material={Color.fromCssColorString('#3b82f6').withAlpha(0.8)}
               />

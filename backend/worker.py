@@ -11,12 +11,36 @@ from physics.coordinates import local_to_wgs84
 from pymongo import MongoClient
 import datetime
 
+import time
+
 # Redis & Mongo setup
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 
-redis_conn = redis.from_url(REDIS_URL)
-mongo_client = MongoClient(MONGO_URL)
+def get_redis_connection():
+    for _ in range(5):
+        try:
+            r = redis.from_url(REDIS_URL)
+            r.ping() # Force a connection test
+            return r
+        except redis.ConnectionError:
+            print("Waiting for Redis to spin up...")
+            time.sleep(2)
+    raise Exception("Could not connect to Redis in Kubernetes cluster")
+
+def get_mongo_connection():
+    for _ in range(5):
+        try:
+            client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=2000)
+            client.admin.command('ping')
+            return client
+        except Exception:
+            print("Waiting for Mongo to spin up...")
+            time.sleep(2)
+    raise Exception("Could not connect to MongoDB in Kubernetes cluster")
+
+redis_conn = get_redis_connection()
+mongo_client = get_mongo_connection()
 db = mongo_client.trajectory_sim
 
 def simulate_task(params_dict: dict):
