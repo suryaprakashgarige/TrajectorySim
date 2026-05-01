@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Trajectory Simulation</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    #cesiumContainer {
+      width: 100%;
+      height: 100%;
+    }
+    #ui-panel {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(42, 42, 42, 0.8);
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      z-index: 10;
+    }
+    .input-group {
+      margin-bottom: 10px;
+    }
+    label {
+      display: inline-block;
+      width: 80px;
+    }
+    input {
+      width: 80px;
+      padding: 4px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    button {
+      margin-top: 10px;
+      padding: 8px 16px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui-panel">
+    <h3>Trajectory Config</h3>
+    <div class="input-group">
+      <strong>Start (Chennai)</strong><br>
+      <label>Lat:</label> <input type="number" id="startLat" value="13.0827" step="any"><br>
+      <label>Lon:</label> <input type="number" id="startLon" value="80.2707" step="any">
+    </div>
+    <div class="input-group">
+      <strong>Target (Maldives)</strong><br>
+      <label>Lat:</label> <input type="number" id="targetLat" value="3.2028" step="any"><br>
+      <label>Lon:</label> <input type="number" id="targetLon" value="73.2207" step="any">
+    </div>
+    <button id="simulateBtn">Simulate</button>
+  </div>
+  <div id="cesiumContainer"></div>
+  <script type="module" src="./src/app.js"></script>
+</body>
+</html>
