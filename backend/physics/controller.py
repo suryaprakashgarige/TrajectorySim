@@ -1,47 +1,45 @@
-class PIDController:
-    def __init__(self, kp: float, ki: float, kd: float, output_limits: tuple[float, float] = (None, None)):
+import numpy as np
+
+class GuidanceController:
+    """
+    3D Target-Based Guidance Controller.
+    Computes a thrust vector to navigate to a target position.
+    """
+    def __init__(self, kp: float, kd: float, max_thrust: float, mass: float = 1.0):
         self.kp = kp
-        self.ki = ki
         self.kd = kd
-        
-        self.output_min, self.output_max = output_limits
-        
-        self.integral = 0.0
-        self.previous_error = 0.0
+        self.max_thrust = max_thrust
+        self.mass = mass
 
-    def compute(self, setpoint: float, current_value: float, dt: float) -> float:
+    def compute(self, current_position: np.ndarray, current_velocity: np.ndarray, target_position: np.ndarray, dt: float, compensate_gravity: bool = True) -> np.ndarray:
         """
-        Compute the PID control output.
-        u(t) = Kp * e(t) + Ki * integral(e(t)) + Kd * derivative(e(t))
+        Compute the 3D thrust vector.
         """
-        if dt <= 0:
-            return 0.0
-
-        error = setpoint - current_value
+        error_vec = target_position - current_position
+        distance = np.linalg.norm(error_vec)
         
-        # Proportional term
-        p_term = self.kp * error
-        
-        # Integral term
-        self.integral += error * dt
-        i_term = self.ki * self.integral
-        
-        # Derivative term
-        derivative = (error - self.previous_error) / dt
-        d_term = self.kd * derivative
-        
-        output = p_term + i_term + d_term
-        
-        # Apply output limits
-        if self.output_min is not None and output < self.output_min:
-            output = self.output_min
-            # Anti-windup: stop integrating if output is saturated
-            self.integral -= error * dt
-        elif self.output_max is not None and output > self.output_max:
-            output = self.output_max
-            # Anti-windup
-            self.integral -= error * dt
+        if distance < 1e-6:
+            direction = np.zeros(3)
+        else:
+            direction = error_vec / distance
             
-        self.previous_error = error
+        # PD control on distance and velocity along the direction vector
+        thrust_mag = self.kp * distance - self.kd * np.dot(current_velocity, direction)
         
-        return output
+        # Base thrust vector from PD control
+        thrust_vector = thrust_mag * direction
+        
+        # Add gravity compensation if requested
+        if compensate_gravity:
+            from .integrator import G_ACCEL
+            gravity_comp = np.array([0.0, 0.0, self.mass * G_ACCEL])
+            thrust_vector += gravity_comp
+            
+        # Clamp total thrust magnitude to allowed limits
+        total_mag = np.linalg.norm(thrust_vector)
+        if total_mag > self.max_thrust:
+            thrust_vector = (thrust_vector / total_mag) * self.max_thrust
+        elif total_mag < 0: # Should not happen with norm but for safety
+            thrust_vector = np.zeros(3)
+            
+        return thrust_vector

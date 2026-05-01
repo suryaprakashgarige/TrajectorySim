@@ -1,106 +1,168 @@
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Grid, Line, Sphere } from '@react-three/drei';
-import { useRef, useMemo, useEffect, useState } from 'react';
-import * as THREE from 'three';
+import { useRef, useEffect, useMemo } from 'react';
+import { Viewer, Entity, PolylineGraphics, ModelGraphics, Scene, Globe, PointGraphics } from 'resium';
+import { 
+  Cartesian3, 
+  Color, 
+  JulianDate, 
+  SampledPositionProperty, 
+  TimeIntervalCollection, 
+  TimeInterval, 
+  VelocityOrientationProperty,
+  createWorldTerrain,
+  Ion,
+  createOsmBuildings
+} from 'cesium';
+import "cesium/Build/Cesium/Widgets/widgets.css";
+
+// Note: In a real production app, the user would provide their own Ion token.
+// Using a placeholder or default if available.
 
 interface TrajectoryPoint {
   time: number;
   x: number;
   y: number;
   z: number;
+  lat: number;
+  lon: number;
+  alt: number;
 }
 
 interface Props {
   data: TrajectoryPoint[];
 }
 
-function SceneContent({ data }: Props) {
-  const sphereRef = useRef<THREE.Mesh>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const startTimeRef = useRef(0);
-
-  // Derive points for the full trajectory line
-  const points = useMemo(() => {
-    if (!data || data.length === 0) return [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, 0.01)];
-    return data.map(pt => new THREE.Vector3(pt.x, pt.z, -pt.y)); // Note: Swapping Y and Z for 3D engine conventions
-  }, [data]);
-
-  // Reset animation when new data arrives
-  useEffect(() => {
-    if (data && data.length > 0) {
-      startTimeRef.current = performance.now();
-      setIsPlaying(true);
-    }
-  }, [data]);
-
-  useFrame(() => {
-    if (!isPlaying || !data || data.length === 0 || !sphereRef.current) return;
-    
-    // Calculate elapsed time (assuming realtime replay for now, or scaled)
-    const elapsed = (performance.now() - startTimeRef.current) / 1000;
-    
-    // Find the current point based on elapsed time
-    const currentPoint = data.find(pt => pt.time >= elapsed);
-    
-    if (currentPoint) {
-      // Map physics coordinates to 3D scene coordinates
-      // Physics Z is altitude, so we map it to Scene Y
-      // Physics Y is North, map to Scene -Z
-      sphereRef.current.position.set(currentPoint.x, currentPoint.z, -currentPoint.y);
-    } else {
-      // Reached the end
-      const last = data[data.length - 1];
-      sphereRef.current.position.set(last.x, last.z, -last.y);
-      setIsPlaying(false);
-    }
-  });
-
-  return (
-    <>
-      <OrbitControls makeDefault />
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 5]} intensity={1} castShadow />
-      
-      <Grid infiniteGrid fadeDistance={50} sectionColor="#444" cellColor="#222" />
-      
-      {/* Target Altitude Line */}
-      {data.length > 0 && (
-         <Line
-            points={[
-              [-10, data[0].z + (data[data.length-1].z - data[0].z), -10],
-              [10, data[0].z + (data[data.length-1].z - data[0].z), -10]
-            ]} // Placeholder for target altitude plane/line
-            color="red"
-            lineWidth={1}
-            dashed
-            opacity={0.3}
-            transparent
-         />
-      )}
-
-      {/* Historical Path Line */}
-      {points.length > 1 && (
-        <Line 
-          points={points}
-          color="#3b82f6" 
-          lineWidth={2}
-        />
-      )}
-
-      {/* Moving Body */}
-      <Sphere ref={sphereRef} args={[0.5, 32, 32]} position={[0, 0, 0]} castShadow>
-        <meshStandardMaterial color="#22c55e" roughness={0.2} metalness={0.8} />
-      </Sphere>
-    </>
-  );
-}
-
 export function TrajectoryScene({ data }: Props) {
+  const viewerRef = useRef<any>(null);
+
+  // 1. Create SampledPositionProperty for animation
+  const { positionProperty, orientationProperty, startTime, stopTime, polylinePositions } = useMemo(() => {
+    if (!data || data.length === 0) {
+      return { 
+        positionProperty: null, 
+        orientationProperty: null, 
+        startTime: null, 
+        stopTime: null,
+        polylinePositions: []
+      };
+    }
+
+    const start = JulianDate.now();
+    const property = new SampledPositionProperty();
+    const positions: Cartesian3[] = [];
+
+    data.forEach((pt) => {
+      const time = JulianDate.addSeconds(start, pt.time, new JulianDate());
+      const position = Cartesian3.fromDegrees(pt.lon, pt.lat, pt.alt);
+      property.addSample(time, position);
+      positions.push(position);
+    });
+
+    const stop = JulianDate.addSeconds(start, data[data.length - 1].time, new JulianDate());
+    
+    // Orientation based on velocity
+    const orientation = new VelocityOrientationProperty(property);
+
+    return { 
+      positionProperty: property, 
+      orientationProperty: orientation,
+      startTime: start, 
+      stopTime: stop,
+      polylinePositions: positions
+    };
+  }, [data]);
+
+  // 2. Adjust view and environment when data changes
+  useEffect(() => {
+    if (viewerRef.current && viewerRef.current.cesiumElement) {
+      const viewer = viewerRef.current.cesiumElement;
+      
+      // Add OSM Buildings
+      viewer.scene.primitives.add(createOsmBuildings());
+
+      if (data.length > 0) {
+        // Zoom to the start point
+        const firstPoint = data[0];
+        viewer.camera.flyTo({
+          destination: Cartesian3.fromDegrees(firstPoint.lon, firstPoint.lat, firstPoint.alt + 1500),
+          orientation: {
+            pitch: -0.5,
+            heading: 0
+          },
+          duration: 2
+        });
+        
+        // Set clock range
+        if (startTime && stopTime) {
+          viewer.clock.startTime = startTime.clone();
+          viewer.clock.stopTime = stopTime.clone();
+          viewer.clock.currentTime = startTime.clone();
+          viewer.clock.clockRange = 1; // LOOP_STOP
+          viewer.clock.multiplier = 1;
+        }
+      }
+    }
+  }, [data, startTime, stopTime]);
+
   return (
-    <div className="w-full h-full bg-zinc-950 rounded-lg overflow-hidden border border-zinc-800">
-      <Canvas camera={{ position: [15, 10, 15], fov: 45 }} shadows>
-        <SceneContent data={data} />
-      </Canvas>
+    <div className="w-full h-full bg-black rounded-xl overflow-hidden shadow-2xl">
+      <Viewer 
+        full 
+        ref={viewerRef}
+        timeline={true}
+        animation={true}
+        baseLayerPicker={false}
+        geocoder={false}
+        navigationHelpButton={false}
+        homeButton={false}
+        sceneModePicker={false}
+        terrainProvider={createWorldTerrain()}
+      >
+        <Scene backgroundColor={Color.BLACK} />
+        <Globe enableLighting={true} />
+        
+        {data.length > 0 && positionProperty && (
+          <>
+            {/* The Missile/Drone Entity */}
+            <Entity
+              position={positionProperty}
+              orientation={orientationProperty}
+              availability={new TimeIntervalCollection([
+                new TimeInterval({ start: startTime!, stop: stopTime! })
+              ])}
+              tracked
+            >
+              {/* Drone 3D Model */}
+              <ModelGraphics
+                uri="https://assets.cesium.com/0/0/0/0/model.glb" // Placeholder URL, Cesium Ion assets are better
+                minimumPixelSize={64}
+                maximumScale={20000}
+                runAnimations={true}
+              />
+              <PointGraphics pixelSize={8} color={Color.YELLOW} />
+            </Entity>
+
+            {/* The Trajectory Path */}
+            <Entity>
+              <PolylineGraphics
+                positions={polylinePositions}
+                width={4}
+                material={Color.fromCssColorString('#3b82f6').withAlpha(0.8)}
+              />
+            </Entity>
+            
+            {/* Target Marker */}
+            <Entity
+              position={Cartesian3.fromDegrees(
+                data[data.length-1].lon, 
+                data[data.length-1].lat, 
+                data[data.length-1].alt
+              )}
+            >
+              <PointGraphics pixelSize={12} color={Color.RED} outlineColor={Color.WHITE} outlineWidth={2} />
+            </Entity>
+          </>
+        )}
+      </Viewer>
     </div>
   );
 }

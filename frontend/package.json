@@ -15,10 +15,12 @@
     "@tailwindcss/postcss": "^4.2.4",
     "@tailwindcss/vite": "^4.2.4",
     "@types/three": "^0.184.0",
+    "cesium": "^1.141.0",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "recharts": "^3.8.1",
+    "resium": "^1.21.0",
     "three": "^0.184.0"
   },
   "devDependencies": {
@@ -36,6 +38,7 @@
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vite-plugin-cesium": "^1.2.23"
   }
 }

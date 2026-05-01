@@ -1,5 +1,5 @@
-# Build stage — Vite 8 requires Node 22+
-FROM node:22-alpine AS build
+# frontend/Dockerfile
+FROM node:20-slim AS build
 
 WORKDIR /app
 
@@ -9,13 +9,8 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# Production stage
 FROM nginx:alpine
-
-# Copy the built assets to nginx
 COPY --from=build /app/dist /usr/share/nginx/html
-
-# Expose port 80
+# Default nginx config is usually fine for SPAs, but might need a custom one for routing
 EXPOSE 80
-
 CMD ["nginx", "-g", "daemon off;"]

@@ -1,11 +1,23 @@
-from fastapi import FastAPI, HTTPException
+from typing import List, Optional, Dict
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import numpy as np
-from physics.integrator import NumericalIntegrator, G_ACCEL
-from physics.controller import PIDController
+import redis
+from rq import Queue
+from rq.job import Job
+import os
+import json
+import asyncio
+from db import replays, missions
+from worker import simulate_task
 
-app = FastAPI(title="Gravity-Compensation Simulation API")
+app = FastAPI(title="Trajecto3D Pro - Cloud Native Simulation API")
+
+# Redis configuration
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_conn = redis.from_url(REDIS_URL)
+q = Queue(connection=redis_conn)
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,107 +28,95 @@ app.add_middleware(
 )
 
 class SimulationParams(BaseModel):
-    mass: float = 1.0  # kg
-    target_altitude: float = 10.0  # m
-    kp: float = 5.0
-    ki: float = 0.5
-    kd: float = 10.0
-    duration: float = 15.0  # seconds
-    dt: float = 0.02  # seconds (50 Hz)
-    drag_coeff: float = 0.47  # sphere
-    reference_area: float = 0.01  # m^2
+    mass: float = 1.0
+    initial_position: List[float] = [0.0, 0.0, 0.0]
+    target_position: List[float] = [0.0, 0.0, 100.0]
+    initial_speed: float = 0.0
+    launch_pitch: float = 0.0
+    launch_yaw: float = 0.0
+    kp: float = 10.0
+    kd: float = 5.0
+    duration: float = 20.0
+    dt: float = 0.02
+    drag_coeff: float = 0.47
+    reference_area: float = 0.01
     integration_method: str = "rk4"
 
 @app.post("/simulate")
-async def run_simulation(params: SimulationParams):
-    if params.duration <= 0 or params.dt <= 0:
-        raise HTTPException(status_code=400, detail="Duration and dt must be positive.")
-        
-    num_steps = int(params.duration / params.dt)
-    
-    # Initialize physics
-    integrator = NumericalIntegrator(
-        mass=params.mass, 
-        drag_coeff=params.drag_coeff, 
-        reference_area=params.reference_area
-    )
-    
-    # Initialize controller. 
-    # Max upward force limit: maybe 3x gravity for a realistic quadcopter/thruster
-    max_thrust = params.mass * G_ACCEL * 3.0
-    controller = PIDController(
-        kp=params.kp, 
-        ki=params.ki, 
-        kd=params.kd,
-        output_limits=(0.0, max_thrust) # Cannot push downwards, only lift
-    )
-    
-    # State: [x, y, z, vx, vy, vz]
-    state = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    
-    # Initial Energy (KE + PE)
-    initial_energy = 0.0 # Since v=0 and z=0
-    
-    cumulative_work_thrust = 0.0
-    cumulative_work_drag = 0.0
-    
-    trajectory = []
-    
-    for step in range(num_steps):
-        t = step * params.dt
-        altitude = state[2]
-        
-        # PID control based on altitude error
-        feed_forward_force = params.mass * G_ACCEL
-        
-        pid_adjustment = controller.compute(setpoint=params.target_altitude, current_value=altitude, dt=params.dt)
-        F_up = feed_forward_force + pid_adjustment
-        
-        # Enforce limits on total F_up
-        if F_up < 0.0:
-            F_up = 0.0
-        elif F_up > max_thrust:
-            F_up = max_thrust
-            
-        # Current velocities
-        vx, vy, vz = state[3], state[4], state[5]
-        v_mag = np.linalg.norm([vx, vy, vz])
-        
-        # Calculate Energies
-        kinetic_energy = 0.5 * params.mass * (v_mag ** 2)
-        potential_energy = params.mass * G_ACCEL * altitude
-        total_energy = kinetic_energy + potential_energy
-        
-        # Calculate Work done over the step (using current velocity as approximation for dt)
-        work_thrust_step = F_up * vz * params.dt
-        
-        # Drag force is -0.5 * rho * Cd * A * |v| * v
-        # Work is F_drag . v * dt = -0.5 * rho * Cd * A * |v|^3 * dt
-        work_drag_step = -0.5 * integrator.air_density * params.drag_coeff * params.reference_area * (v_mag ** 3) * params.dt
-        
-        cumulative_work_thrust += work_thrust_step
-        cumulative_work_drag += work_drag_step
-        
-        energy_error = total_energy - initial_energy - cumulative_work_thrust - cumulative_work_drag
-        
-        # Log data point before step
-        trajectory.append({
-            "time": float(t),
-            "x": float(state[0]),
-            "y": float(state[1]),
-            "z": float(state[2]),
-            "vx": float(vx),
-            "vy": float(vy),
-            "vz": float(vz),
-            "f_up": float(F_up),
-            "altitude_error": float(params.target_altitude - altitude),
-            "kinetic_energy": float(kinetic_energy),
-            "potential_energy": float(potential_energy),
-            "total_energy": float(total_energy),
-            "energy_error": float(energy_error)
-        })
-        
-        # Step physics
-        state = integrator.step(state, F_up, params.dt, method=params.integration_method)
+async def enqueue_simulation(params: SimulationParams):
+    """Enqueues a simulation task and returns a job ID."""
+    # Create a job first to get ID
+    job = q.enqueue(simulate_task, params.dict(), job_id=None) # job_id is auto-generated
+    return {"job_id": job.get_id()}
 
-    return {"trajectory": trajectory}
+@app.get("/result/{job_id}")
+async def get_result(job_id: str):
+    """Fetches the result of a simulation job (from RQ or DB)."""
+    # 1. Check if job is finished in RQ
+    try:
+        job = Job.fetch(job_id, connection=redis_conn)
+        if job.is_finished:
+            return job.result
+        if job.is_failed:
+            return {"status": "failed", "error": str(job.exc_info)}
+    except:
+        pass
+
+    # 2. Check if result is in MongoDB (Persistence)
+    result_doc = await replays.find_one({"job_id": job_id})
+    if result_doc:
+        return result_doc["result"]
+
+    return {"status": "processing"}
+
+@app.get("/replays")
+async def list_replays():
+    """Lists all historical mission summaries."""
+    cursor = missions.find().sort("timestamp", -1).limit(50)
+    docs = await cursor.to_list(length=50)
+    for doc in docs:
+        doc["_id"] = str(doc["_id"])
+    return docs
+
+@app.get("/replays/{job_id}")
+async def get_replay(job_id: str):
+    """Fetches a specific historical trajectory."""
+    doc = await replays.find_one({"job_id": job_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Replay not found")
+    return doc["result"]
+
+@app.websocket("/ws/{job_id}")
+async def websocket_endpoint(websocket: WebSocket, job_id: str):
+    """Streams real-time telemetry from Redis Pub/Sub to the client."""
+    await websocket.accept()
+    pubsub = redis_conn.pubsub()
+    pubsub.subscribe(f"telemetry:{job_id}")
+    
+    try:
+        while True:
+            # Check for messages from Redis
+            message = pubsub.get_message(ignore_subscribe_messages=True)
+            if message:
+                await websocket.send_text(message['data'].decode('utf-8'))
+            
+            # Check if job is finished to stop streaming
+            try:
+                job = Job.fetch(job_id, connection=redis_conn)
+                if job.is_finished or job.is_failed:
+                    break
+            except:
+                # If job not found in RQ, check if it's already in DB
+                if await replays.find_one({"job_id": job_id}):
+                    break
+
+            await asyncio.sleep(0.01) # Small delay to avoid busy loop
+    except WebSocketDisconnect:
+        pass
+    finally:
+        pubsub.unsubscribe(f"telemetry:{job_id}")
+        await websocket.close()
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "redis": redis_conn.ping()}

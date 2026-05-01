@@ -14,19 +14,19 @@ class NumericalIntegrator:
         self.reference_area = reference_area
         self.air_density = air_density
 
-    def compute_acceleration(self, state: np.ndarray, F_up: float) -> np.ndarray:
+    def compute_acceleration(self, state: np.ndarray, thrust_vector: np.ndarray) -> np.ndarray:
         """
         Computes acceleration at a given state.
         a = F_net / m
-        F_net = F_gravity + F_drag + F_up
+        F_net = F_gravity + F_drag + Thrust
         """
         v = state[3:6]
         
         # 1. Gravity force vector (acting downwards on Z axis)
         F_gravity = np.array([0.0, 0.0, -self.mass * G_ACCEL])
         
-        # 2. Compensation force (Thrust/Levitation) vector (acting upwards on Z axis)
-        F_compensation = np.array([0.0, 0.0, F_up])
+        # 2. Compensation force (Thrust vector)
+        F_compensation = thrust_vector
         
         # 3. Aerodynamic Drag force
         v_mag = np.linalg.norm(v)
@@ -41,40 +41,40 @@ class NumericalIntegrator:
         
         return acceleration
 
-    def state_derivative(self, state: np.ndarray, F_up: float) -> np.ndarray:
+    def state_derivative(self, state: np.ndarray, thrust_vector: np.ndarray) -> np.ndarray:
         """
         Returns the derivative of the state vector: [vx, vy, vz, ax, ay, az]
         """
         v = state[3:6]
-        a = self.compute_acceleration(state, F_up)
+        a = self.compute_acceleration(state, thrust_vector)
         return np.concatenate((v, a))
 
-    def step(self, state: np.ndarray, F_up: float, dt: float, method: str = 'rk4') -> np.ndarray:
+    def step(self, state: np.ndarray, thrust_vector: np.ndarray, dt: float, method: str = 'rk4') -> np.ndarray:
         """
         Perform one integration step using the specified numerical method.
         """
         if method == 'euler':
-            return self.euler_step(state, F_up, dt)
+            return self.euler_step(state, thrust_vector, dt)
         else:
-            return self.rk4_step(state, F_up, dt)
+            return self.rk4_step(state, thrust_vector, dt)
 
-    def euler_step(self, state: np.ndarray, F_up: float, dt: float) -> np.ndarray:
+    def euler_step(self, state: np.ndarray, thrust_vector: np.ndarray, dt: float) -> np.ndarray:
         """
         Perform one Forward Euler integration step.
         y_k+1 = y_k + f(t_k, y_k) * dt
         """
-        derivative = self.state_derivative(state, F_up)
+        derivative = self.state_derivative(state, thrust_vector)
         return state + derivative * dt
 
-    def rk4_step(self, state: np.ndarray, F_up: float, dt: float) -> np.ndarray:
+    def rk4_step(self, state: np.ndarray, thrust_vector: np.ndarray, dt: float) -> np.ndarray:
         """
         Perform one Runge-Kutta 4 (RK4) integration step.
         y_k+1 = y_k + 1/6 * (k1 + 2k2 + 2k3 + k4) * dt
         """
-        k1 = self.state_derivative(state, F_up)
-        k2 = self.state_derivative(state + 0.5 * dt * k1, F_up)
-        k3 = self.state_derivative(state + 0.5 * dt * k2, F_up)
-        k4 = self.state_derivative(state + dt * k3, F_up)
+        k1 = self.state_derivative(state, thrust_vector)
+        k2 = self.state_derivative(state + 0.5 * dt * k1, thrust_vector)
+        k3 = self.state_derivative(state + 0.5 * dt * k2, thrust_vector)
+        k4 = self.state_derivative(state + dt * k3, thrust_vector)
         
         next_state = state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
         return next_state
