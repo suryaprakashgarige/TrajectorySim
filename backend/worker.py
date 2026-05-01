@@ -13,35 +13,43 @@ import datetime
 
 import time
 
+from pymongo.errors import ConnectionFailure
+
 # Redis & Mongo setup
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 
 def get_redis_connection():
-    for _ in range(5):
+    max_retries = 5
+    for i in range(max_retries):
         try:
             r = redis.from_url(REDIS_URL)
             r.ping() # Force a connection test
             return r
         except redis.ConnectionError:
-            print("Waiting for Redis to spin up...")
-            time.sleep(2)
-    raise Exception("Could not connect to Redis in Kubernetes cluster")
+            wait_time = 2 ** i
+            print(f"Redis connection failed. Retrying in {wait_time}s... (Attempt {i+1}/{max_retries})")
+            time.sleep(wait_time)
+    raise Exception("Could not connect to Redis after multiple attempts.")
 
 def get_mongo_connection():
-    for _ in range(5):
+    max_retries = 5
+    for i in range(max_retries):
         try:
             client = MongoClient(MONGO_URL, serverSelectionTimeoutMS=2000)
+            # Force a ping command to verify the connection is actually alive
             client.admin.command('ping')
-            return client
-        except Exception:
-            print("Waiting for Mongo to spin up...")
-            time.sleep(2)
-    raise Exception("Could not connect to MongoDB in Kubernetes cluster")
+            print("Successfully connected to the database.")
+            return client.trajectory_sim
+        except ConnectionFailure as e:
+            wait_time = 2 ** i  # Exponential backoff: 1s, 2s, 4s, 8s, 16s
+            print(f"Database connection failed. Retrying in {wait_time}s... (Attempt {i+1}/{max_retries})")
+            time.sleep(wait_time)
+    
+    raise Exception("Could not connect to the database after multiple attempts. Check K8s DNS and Mongo Pod logs.")
 
 redis_conn = get_redis_connection()
-mongo_client = get_mongo_connection()
-db = mongo_client.trajectory_sim
+db = get_mongo_connection()
 
 def simulate_task(params_dict: dict):
     """
