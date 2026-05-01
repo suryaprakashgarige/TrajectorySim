@@ -4,30 +4,29 @@ metadata:
   name: frontend-config
 data:
   config.js: |
+    // This allows React to know where the API is inside K8s
     window.ENV = {
-      API_URL: "http://localhost:8000" // Update this to your public Ingress URL
+      API_URL: "http://api.trajectorysim.local"
     };
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: trajectory-frontend
-  labels:
-    app: trajectory-frontend
+  name: frontend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: trajectory-frontend
+      app: frontend
   template:
     metadata:
       labels:
-        app: trajectory-frontend
+        app: frontend
     spec:
       containers:
       - name: frontend
-        image: trajectory-frontend:latest
-        imagePullPolicy: Never
+        image: trajectorysim-frontend:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
         volumeMounts:
@@ -42,12 +41,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: trajectory-frontend-svc
+  name: frontend-service
 spec:
-  type: LoadBalancer
   selector:
-    app: trajectory-frontend
+    app: frontend
   ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 80
+  - port: 80
+    targetPort: 80
