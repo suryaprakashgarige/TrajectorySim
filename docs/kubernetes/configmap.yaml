@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sim-config
+  namespace: missile-sim
+data:
+  GUIDANCE_ALIGNMENT_THRESHOLD_MRAD: "0.5"
+  PROPELLANT_PRESSURE_MIN_BAR: "45.0"
+  PROPELLANT_PRESSURE_MAX_BAR: "55.0"
+  WARHEAD_INTERLOCK_CODE: "SAFE_ARMED"
+  SIMULATION_MODE: "nominal"
+  LOG_LEVEL: "INFO"

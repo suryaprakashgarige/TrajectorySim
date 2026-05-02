@@ -1,11 +1,57 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  trajectorysim:
-    build:
-      context: ./server
+  guidance-service:
+    build: ./server/guidance-service
+    container_name: guidance-service
     ports:
-      - "3000:3000"
-    volumes:
-      - ./server:/app/server
-      - ./client:/app/client
+      - "5001:5001"
+    environment:
+      - GUIDANCE_ALIGNMENT_THRESHOLD_MRAD=0.5
+      - SIMULATION_MODE=nominal
+    networks:
+      - missile-sim-net
+
+  propulsion-service:
+    build: ./server/propulsion-service
+    container_name: propulsion-service
+    ports:
+      - "5002:5002"
+    environment:
+      - PROPELLANT_PRESSURE_MIN_BAR=45.0
+      - PROPELLANT_PRESSURE_MAX_BAR=55.0
+      - SIMULATION_MODE=nominal
+    networks:
+      - missile-sim-net
+
+  warhead-service:
+    build: ./server/warhead-service
+    container_name: warhead-service
+    ports:
+      - "5003:5003"
+    environment:
+      - WARHEAD_INTERLOCK_CODE=SAFE_ARMED
+      - SIMULATION_MODE=nominal
+    networks:
+      - missile-sim-net
+
+  launch-auth-service:
+    build: ./server/launch-auth-service
+    container_name: launch-auth-service
+    ports:
+      - "5000:5000"
+    environment:
+      - GUIDANCE_SERVICE_URL=http://guidance-service:5001/guidance/status
+      - PROPULSION_SERVICE_URL=http://propulsion-service:5002/propulsion/status
+      - WARHEAD_SERVICE_URL=http://warhead-service:5003/warhead/status
+      - TIMEOUT_SECONDS=5
+    depends_on:
+      - guidance-service
+      - propulsion-service
+      - warhead-service
+    networks:
+      - missile-sim-net
+
+networks:
+  missile-sim-net:
+    driver: bridge

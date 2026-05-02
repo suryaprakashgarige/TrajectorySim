@@ -1,0 +1,120 @@
+name: Pre-Launch Missile Simulation CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/suryaprakashgarige/trajectorysim
+
+jobs:
+  build-and-test:
+    name: Build & Test All Services
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [guidance-service, propulsion-service, warhead-service, launch-auth-service]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        run: |
+          cd server/${{ matrix.service }}
+          pip install -r requirements.txt
+
+      - name: Run Unit Tests
+        run: |
+          cd server/${{ matrix.service }}
+          pytest tests/unit/ -v --tb=short
+
+      - name: Run Integration Tests
+        run: |
+          cd server/${{ matrix.service }}
+          pytest tests/integration/ -v --tb=short
+
+      - name: Build Docker Image
+        run: |
+          docker build -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }} \
+            -t ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest \
+            server/${{ matrix.service }}/
+
+  push-images:
+    name: Push Images to GHCR
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    strategy:
+      matrix:
+        service: [guidance-service, propulsion-service, warhead-service, launch-auth-service]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: server/${{ matrix.service }}/
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:latest
+
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: push-images
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.29.0'
+
+      - name: Configure kubectl
+        run: |
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+
+      - name: Apply Namespace and ConfigMap
+        run: |
+          kubectl apply -f docs/kubernetes/namespace.yaml
+          kubectl apply -f docs/kubernetes/configmap.yaml
+
+      - name: Deploy All Services
+        run: |
+          for service in guidance propulsion warhead launch-auth; do
+            kubectl set image deployment/${service}-service \
+              ${service}-service=${{ env.IMAGE_PREFIX }}/${service}-service:${{ github.sha }} \
+              -n missile-sim || kubectl apply -f docs/kubernetes/${service}-deployment.yaml
+          done
+
+      - name: Wait for Rollout
+        run: |
+          for service in guidance propulsion warhead launch-auth; do
+            kubectl rollout status deployment/${service}-service \
+              -n missile-sim --timeout=120s || \
+              (kubectl rollout undo deployment/${service}-service -n missile-sim && exit 1)
+          done
+
+      - name: Verify Deployment Health
+        run: |
+          kubectl get pods -n missile-sim
+          kubectl get services -n missile-sim

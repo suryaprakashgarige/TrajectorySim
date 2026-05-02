@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: warhead-service
+  namespace: missile-sim
+  labels:
+    app: warhead-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: warhead-service
+  template:
+    metadata:
+      labels:
+        app: warhead-service
+    spec:
+      containers:
+        - name: warhead-service
+          image: ghcr.io/suryaprakashgarige/trajectorysim/warhead-service:latest
+          ports:
+            - containerPort: 5003
+          envFrom:
+            - configMapRef:
+                name: sim-config
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5003
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5003
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: warhead-service
+  namespace: missile-sim
+spec:
+  selector:
+    app: warhead-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5003
+  type: ClusterIP

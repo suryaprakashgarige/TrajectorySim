@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: guidance-service
+  namespace: missile-sim
+  labels:
+    app: guidance-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: guidance-service
+  template:
+    metadata:
+      labels:
+        app: guidance-service
+    spec:
+      containers:
+        - name: guidance-service
+          image: ghcr.io/suryaprakashgarige/trajectorysim/guidance-service:latest
+          ports:
+            - containerPort: 5001
+          envFrom:
+            - configMapRef:
+                name: sim-config
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: guidance-service
+  namespace: missile-sim
+spec:
+  selector:
+    app: guidance-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5001
+  type: ClusterIP

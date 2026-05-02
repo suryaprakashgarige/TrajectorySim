@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: launch-auth-service
+  namespace: missile-sim
+  labels:
+    app: launch-auth-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: launch-auth-service
+  template:
+    metadata:
+      labels:
+        app: launch-auth-service
+    spec:
+      containers:
+        - name: launch-auth-service
+          image: ghcr.io/suryaprakashgarige/trajectorysim/launch-auth-service:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: sim-config
+          env:
+            - name: GUIDANCE_SERVICE_URL
+              value: "http://guidance-service/guidance/status"
+            - name: PROPULSION_SERVICE_URL
+              value: "http://propulsion-service/propulsion/status"
+            - name: WARHEAD_SERVICE_URL
+              value: "http://warhead-service/warhead/status"
+            - name: TIMEOUT_SECONDS
+              value: "5"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: launch-auth-service
+  namespace: missile-sim
+spec:
+  selector:
+    app: launch-auth-service
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+  type: LoadBalancer

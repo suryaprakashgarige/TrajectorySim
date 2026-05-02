@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: missile-sim
+  labels:
+    project: pre-launch-simulation
+    team: aeronautical-engineering
+    institute: IARE
